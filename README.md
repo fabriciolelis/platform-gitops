@@ -62,4 +62,4 @@ After a merge, verify that Argo CD reports the application as `Synced` and `Heal
 
 ## Related documents
 
-See ADR-003 in the `formula-docs` repository for the GitOps decision, and use `formula-docs/runbooks` for rollback and incident procedures.
+See ADR-003 in the `platform-docs` repository for the GitOps decision, and use `platform-docs/runbooks` for rollback and incident procedures.
