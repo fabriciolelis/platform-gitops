@@ -1,8 +1,9 @@
 # Spec: First GitOps deployment of Formula Insights (local k3d)
 
-- Status: Draft, awaiting approval
+- Status: Approved (scope and decisions in `platform-docs/sprints/sprint-3-plan.md`)
 - Tracks: platform-gitops#2 (decisions), Sprint 3 deployment work
-- Repositories touched: `platform-docs` (ADR-008), `formula-insights-api` (two small API changes), `platform-gitops` (manifests and bootstrap)
+- Repositories touched: `platform-docs` (ADR-008), `formula-insights-api` (small API changes, formula-insights-api#33), `platform-gitops` (manifests and bootstrap)
+- Vocabulary: terms such as daily import, backfill, promotion, and rollback are defined in `platform-docs/GLOSSARY.md`
 
 ## Objective
 
@@ -54,6 +55,11 @@ AWS is out of scope (Sprint 1 review, ADR-004). The structure must still let a
    out. `GET /health` stays a liveness check that does not touch the database.
    This is the endpoint the availability SLO probes. The probe itself belongs to
    the observability work.
+3. **Structured logs:** logs are JSON. Every import ends with one summary line
+   (outcome, seasons, row counts, and the reason for a failure). Together with
+   the condition of each daily import's Job (`Complete` is a success, `Failed`
+   is a failure, including a deadline exceeded or a partial run), this line is
+   the ingestion signal of platform-docs#10 until metrics arrive in Sprint 4.
 
 ### B. platform-gitops content
 
@@ -67,7 +73,7 @@ AWS is out of scope (Sprint 1 review, ADR-004). The structure must still let a
 Rules that apply to every workload:
 
 - CPU and memory requests and limits are set for every container.
-- Containers run with `runAsNonRoot`, a numeric UID, `allowPrivilegeEscalation: false`, all capabilities dropped, seccomp `RuntimeDefault`, a read-only root filesystem, and `PYTHONDONTWRITEBYTECODE=1`. PostgreSQL gets the subset its image supports. The image has no `USER`, so the UID is set in the pod spec.
+- Containers run with `runAsNonRoot`, a numeric UID, `allowPrivilegeEscalation: false`, all capabilities dropped, seccomp `RuntimeDefault`, a read-only root filesystem, and `PYTHONDONTWRITEBYTECODE=1`. PostgreSQL gets the subset its image supports. The API image already runs as UID 10001 (`USER` in its Dockerfile, formula-insights-api#28); the pod spec still sets `runAsNonRoot: true` and `runAsUser: 10001`, so an image published without `USER` fails to start instead of running as root.
 - The image is referenced only by a full commit SHA, set once per overlay through the Kustomize `images:` field. The migration Job and the importer therefore always run the same version as the API.
 - `DATABASE_URL` and `POSTGRES_PASSWORD` come from one SOPS-encrypted Secret per environment. `JOLPICA_BASE_URL` comes from a ConfigMap.
 
@@ -85,7 +91,7 @@ Automated image updates are out of scope.
 
 ## Commands
 
-Prerequisites: Docker, k3d, kubectl, sops, age, and the age private key.
+Prerequisites: Docker, k3d, kubectl, sops, age, jq (for the backfill), and the age private key.
 `SOPS_AGE_KEY_FILE` points to the key; the default on Windows is
 `%AppData%\sops\age\keys.txt`.
 
@@ -104,6 +110,19 @@ kubectl -n formula-insights port-forward svc/formula-insights-api 8000:80
 curl -fsS localhost:8000/ready
 kubectl -n formula-insights create job --from=cronjob/formula-insights-importer import-now
 kubectl -n formula-insights wait --for=condition=Complete job/import-now --timeout=1800s
+
+# Backfill historical seasons: copy the CronJob's Job (same image, Secret, and
+# securityContext), then override only the arguments and the deadline. A plain
+# `create job --from` would keep `current` and the 30-minute deadline, and a
+# backfill targets 3 hours (ADR-006). Run it as one season range: pacing is
+# per command.
+kubectl -n formula-insights create job backfill --from=cronjob/formula-insights-importer \
+  --dry-run=client -o json \
+  | jq --arg last "$(( $(date -u +%Y) - 1 ))" '
+      .spec.activeDeadlineSeconds = 14400
+      | .spec.template.spec.containers[0].args = ["python", "-m", "app.cli", "1950", $last]' \
+  | kubectl create -f -
+kubectl -n formula-insights wait --for=condition=Complete job/backfill --timeout=14400s
 
 # Edit or create a secret (opens decrypted in $EDITOR, re-encrypts on save)
 sops applications/formula-insights/overlays/local/secret.enc.yaml
@@ -164,7 +183,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2              # job-level retries; the client never retries (ADR-006)
-      activeDeadlineSeconds: 1800  # incremental refresh SLO: 30 minutes
+      activeDeadlineSeconds: 1800  # daily import SLO: 30 minutes
       template:
         spec:
           restartPolicy: Never
@@ -218,7 +237,9 @@ show how. Running the end-to-end check on k3d in CI is out of scope.
 5. After `k3d cluster delete` and the bootstrap again with the same age key,
    criteria 1–3 pass with no secret re-encrypted.
 6. CI fails on a PR that adds an unencrypted `Secret`, an image without a tag,
-   or a container without resource limits.
+   or a container without resource limits, and the PR cannot be merged: the
+   validation job is a required status check on `main`. No review is required,
+   so this check is the only gate between a PR and the cluster.
 7. ADR-008 is merged in platform-docs, platform-gitops#2 is closed, and this
    repository's README matches the structure that was implemented.
 8. The importer CronJob shows `concurrencyPolicy: Forbid`, `backoffLimit: 2`,
@@ -227,24 +248,34 @@ show how. Running the end-to-end check on k3d in CI is out of scope.
 
 ## Assumptions
 
-1. `local` is not a "persistent environment" in the sense of ADR-007, so it uses
-   a single database role. The separate migration and application roles arrive
+1. `local` is not a persistent environment (`platform-docs/GLOSSARY.md`; see the
+   2026-11-13 update in ADR-007), so it uses a single database role. The separate migration and application roles arrive
    with the first persistent environment.
-2. The GHCR package is public, so the cluster pulls without credentials. I could
-   not verify this, because the local `gh` token lacks `read:packages`.
+2. The GHCR package is public, so the cluster pulls without credentials
+   (verified in Sprint 2).
 3. Data loss on `k3d cluster delete` is acceptable; recovery is re-running the
    importer.
 4. Pinned Argo CD, KSOPS, and kubeconform versions are chosen in the plan and
    must be at least two weeks old.
 
-## Open questions
+## Decisions on the former open questions
 
-1. Is the GHCR package public? If it is private, the spec needs an image pull
-   secret, encrypted with SOPS.
-2. Does 06:00 UTC suit you for the daily run? Results from Sunday races are
-   usually on Jolpica by Monday morning.
-3. Do you accept assumption 1 (single database role locally)? If not, the
-   PostgreSQL bootstrap has to create two roles now.
-4. Should the manual backfill (`python -m app.cli 1950 <last year>`) get a
-   committed, suspended Job manifest, or a documented `kubectl create job`
-   command only? The spec currently assumes the command only.
+Recorded in `platform-docs/sprints/sprint-3-plan.md`:
+
+1. **GHCR visibility:** the package is public; no image pull secret.
+2. **Daily import:** 06:00 UTC. A late Sunday result is picked up by the next run.
+3. **Database roles:** one role locally (assumption 1 accepted).
+4. **Backfill:** a documented command, not a committed Job manifest. The
+   command copies the CronJob's Job and overrides its arguments and deadline
+   (see Commands); a suspended Job managed by Argo CD would be re-suspended by
+   self-heal.
+
+Further decisions:
+
+- **Rollback** reverts the promotion PR in Git (`platform-docs/GLOSSARY.md`).
+  It may be merged without review while the service is down, with the reason in
+  the PR; the schema is never reverted (ADR-007). Argo CD's own rollback and
+  `kubectl set image` are not used, because automated sync undoes them. The
+  procedure lives in the rollback runbook (platform-docs#10).
+- **Required check:** once `.github/workflows/validate.yml` exists, its job is
+  made a required status check on `main` (Success criterion 6).
