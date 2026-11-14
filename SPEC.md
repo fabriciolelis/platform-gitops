@@ -279,3 +279,61 @@ Further decisions:
   procedure lives in the rollback runbook (platform-docs#10).
 - **Required check:** once `.github/workflows/validate.yml` exists, its job is
   made a required status check on `main` (Success criterion 6).
+
+## Implementation decisions
+
+Settled for platform-gitops#7 on 2026-11-15.
+
+**Pinned versions** (each at least two weeks old when chosen):
+
+| Component | Version | Why this one |
+| --- | --- | --- |
+| K3s (k3d node image) | v1.35.9+k3s1 | Inside the Kubernetes versions Argo CD 3.5 is tested on (1.33 to 1.36). k3d's default, 1.32, is not, and is out of upstream support. |
+| Argo CD | v3.5.6 | The 3.6 line was too new. |
+| KSOPS | v4.5.1 | |
+| k3d | v5.9.0 | |
+| kustomize (CI) | v5.8.1 | The version built into Argo CD v3.5.6, so CI renders as the cluster does. |
+| kubeconform (CI) | v0.8.0 | Validates against the Kubernetes 1.35.9 schemas. |
+| yq (CI) | v4.54.1 | |
+| CRD schemas (CI) | datreeio/CRDs-catalog at `3eb90d4` | Schemas for `Application` and `AppProject`, which kubeconform does not know. |
+
+**Local tooling:** Docker Desktop on WSL2, with k3d, kubectl, sops, and age
+installed through winget.
+
+**CI without the age key:** `scripts/validate.sh` drops the KSOPS generators,
+renders every entry point, and validates it with kubeconform. It checks
+separately that every `*.enc.yaml` carries SOPS metadata, and with yq that no
+Secret is committed in plaintext, no image lacks a tag or digest (or uses
+`latest`), and every container has CPU and memory requests and limits.
+`scripts/test-validate.sh` proves each rule fails for the right reason. Policy
+tools such as conftest wait until there are more rules.
+
+**Secrets:** the maintainer generates the age key pair and keeps the private key
+in a password manager as its backup. Only the public key is shared; secrets are
+encrypted with it, and generated values such as the PostgreSQL password go
+straight into `sops` without being displayed.
+
+**Workloads:**
+
+- A writable `emptyDir` is mounted at `/tmp` in the API, the migration Job, and
+  the importer, which run with a read-only root filesystem.
+- Starting requests and limits, to be tuned with measurements:
+
+  | Workload | Requests | Limits |
+  | --- | --- | --- |
+  | API, migration Job, importer | 100m CPU, 128 Mi | 500m CPU, 256 Mi |
+  | PostgreSQL | 250m CPU, 256 Mi | 1 CPU, 512 Mi |
+
+- Failed syncs are retried at most 3 times, backing off from 30 s to 3 min, then
+  stay visibly failed.
+
+**Delivery in four pull requests:** (1) CI and validation, (2) bootstrap: k3d
+config, Argo CD with KSOPS, `.sops.yaml`, (3) PostgreSQL, (4) Formula Insights:
+migration hook, API, importer, README.
+
+**Verifying Success criterion 4:** images are only published from `main`, so a
+failing migration cannot come from a throwaway branch. Instead, a deliberately
+broken promotion is merged to `main` (the migration command fails), the failed
+sync is observed with the previous version still serving, and the promotion is
+reverted with the rollback runbook. This "rollback drill" is also the runbook's
+evidence. The end-to-end output goes into the Sprint 3 review.
