@@ -1,0 +1,16 @@
+# Reached through kubectl port-forward only; there is no Ingress (SPEC.md).
+apiVersion: v1
+kind: Service
+metadata:
+  name: formula-insights-api
+  labels:
+    app.kubernetes.io/component: api
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: formula-insights
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

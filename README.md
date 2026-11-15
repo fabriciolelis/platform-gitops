@@ -6,60 +6,106 @@ Desired Kubernetes state for the Formula Insights Platform, reconciled by Argo C
 
 This repository is the source of truth for what is deployed to each Kubernetes environment. It contains declarative workload configuration, environment-specific values, Argo CD application definitions, and platform policies that belong at the cluster layer.
 
-Argo CD, not a CI pipeline, applies these changes to Kubernetes.
+Argo CD, not a CI pipeline, applies these changes to Kubernetes (ADR-003). The bootstrap, secrets, and environment decisions are in ADR-008; the design of the first environment is in [`SPEC.md`](SPEC.md).
 
 ## Scope
 
-- Argo CD `Application` definitions.
-- Namespace configuration and Kubernetes policies.
-- Helm values or Kustomize overlays by environment.
+- Argo CD `Application` and `AppProject` definitions.
+- Kustomize bases and per-environment overlays.
 - Approved container image versions.
 - Kubernetes resource requests, limits, probes, and scheduled-job configuration.
+- Secrets, encrypted with SOPS and age; never in plaintext.
 
 ## Out of scope
 
 - Application business logic.
 - Building container images.
 - Terraform-managed cloud resources.
-- Plaintext secrets.
 
-## Intended structure
+## Structure
 
 ```text
-bootstrap/             # Argo CD bootstrap and root applications
-applications/
-  formula-insights/    # workload deployment configuration
+.sops.yaml                      # age recipient for every *.enc.yaml
+bootstrap/
+  k3d-local.yaml                # k3d cluster for the local environment
+  argocd/                       # pinned Argo CD install, KSOPS on the repo server
+  root-local.yaml               # root Application -> environments/local
 environments/
-  dev/
-  prod/
-policies/              # namespace, network, or admission policies
+  local/                        # AppProject and Applications for local
+applications/
+  postgres/                     # database: base and overlays/<environment>
+  formula-insights/             # migration hook, API, daily importer
+scripts/
+  validate.sh                   # what CI runs, without a cluster or the age key
+  test-validate.sh              # proves each validation rule
 ```
 
-## Delivery flow
+Environments are `local` (k3d) now and `dev` (the AWS lab) later. A new environment adds an overlay per application and an `environments/<environment>/` directory; the bases do not change.
 
-```text
-formula-insights-api pull request
-        ↓
-GitHub Actions tests and builds an image
-        ↓
-reviewed image-version update in this repository
-        ↓
-Argo CD reconciles desired state to Kubernetes
+## Run the local environment
+
+Prerequisites: Docker, k3d, kubectl, sops, age, and yq (all available through winget on Windows), and the age private key. `SOPS_AGE_KEY_FILE` points to the key; on Windows the default is `%AppData%\sops\age\keys.txt`.
+
+```bash
+# Create the cluster and bootstrap Argo CD with the age key
+k3d cluster create --config bootstrap/k3d-local.yaml
+kubectl create namespace argocd
+kubectl -n argocd create secret generic sops-age --from-file=keys.txt="$SOPS_AGE_KEY_FILE"
+kubectl apply --server-side -k bootstrap/argocd
+kubectl -n argocd wait --for=condition=Available deployment --all --timeout=300s
+kubectl apply -f bootstrap/root-local.yaml
+
+# Verify: every Application Synced and Healthy, then the API
+kubectl -n argocd get applications
+kubectl -n formula-insights port-forward svc/formula-insights-api 8000:80
+curl -fsS localhost:8000/ready
+
+# Run the daily import now instead of waiting for 06:00 UTC
+kubectl -n formula-insights create job --from=cronjob/formula-insights-importer import-now
+kubectl -n formula-insights wait --for=condition=Complete job/import-now --timeout=1800s
+
+# Tear down; the data is disposable and the importer refills it
+k3d cluster delete formula-insights-local
 ```
+
+A rebuilt cluster loads the same age key, so no secret is re-encrypted.
+
+## Common tasks
+
+**Promote a new image.** In a pull request, change `newTag` in `applications/formula-insights/overlays/local/kustomization.yaml` to the full commit SHA of a published image, and paste the output of:
+
+```bash
+gh attestation verify oci://ghcr.io/fabriciolelis/formula-insights-api:<commit-sha> --owner fabriciolelis
+```
+
+After the merge, Argo CD runs the migration Job first; the new API pods start only if it succeeds.
+
+**Roll back.** Revert the promotion pull request in Git; the schema is never reverted (ADR-007). See the rollback runbook in `platform-docs`.
+
+**Backfill past seasons.** Copy the importer's Job with other arguments and a longer deadline (ADR-006; a backfill takes hours by design):
+
+```bash
+kubectl -n formula-insights create job backfill --from=cronjob/formula-insights-importer --dry-run=client -o yaml \
+  | yq '.spec.template.spec.containers[0].args = ["python", "-m", "app.cli", "1950", "<last year>"] | .spec.activeDeadlineSeconds = 14400' \
+  | kubectl apply -f -
+```
+
+**Edit a secret.** `sops applications/postgres/overlays/local/secret.enc.yaml` opens it decrypted in `$EDITOR` and re-encrypts it on save. Never commit a decrypted file.
+
+**Validate before pushing.** With kustomize, kubeconform, and yq installed (versions in `.github/workflows/validate.yml`), run `scripts/test-validate.sh` and `scripts/validate.sh`.
 
 ## Change rules
 
-- Every production-facing change is made through a pull request.
-- Pin container images to immutable versions; do not deploy `latest`.
-- Define CPU and memory requests/limits for every workload.
-- Define readiness and liveness probes for the API.
-- Define a clear retry and failure policy for the ingestion CronJob.
-- Store secret references only; use a dedicated secret-management mechanism for values.
+- Every change is made through a pull request; `Validate manifests` is a required check.
+- Pin images to a full commit SHA or a digest; never deploy `latest`.
+- Define CPU and memory requests and limits for every container.
+- Commit secrets only encrypted with SOPS; keep the age private key out of Git and CI.
+- Never `kubectl apply` a workload that Argo CD manages; bootstrap is the only exception.
 
 ## Verification
 
-After a merge, verify that Argo CD reports the application as `Synced` and `Healthy`. The deployed version and relevant dashboard links should be included in the pull request.
+After a merge, verify that Argo CD reports every Application as `Synced` and `Healthy`. Promotion pull requests include the attestation check for the image they deploy.
 
 ## Related documents
 
-See ADR-003 in the `platform-docs` repository for the GitOps decision, and use `platform-docs/runbooks` for rollback and incident procedures.
+ADR-003 (GitOps delivery), ADR-007 (migrations), and ADR-008 (bootstrap, secrets, environments) in the `platform-docs` repository, which also holds the rollback runbook.
