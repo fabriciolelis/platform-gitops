@@ -1,0 +1,65 @@
+# The daily import of the current season (ADR-006). The importer never retries
+# on its own: backoffLimit is the job-level retry, and the deadline is the
+# 30-minute refresh SLO.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: formula-insights-importer
+  labels:
+    app.kubernetes.io/component: importer
+spec:
+  schedule: "0 6 * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: formula-insights
+            app.kubernetes.io/component: importer
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: importer
+              image: ghcr.io/fabriciolelis/formula-insights-api  # tag set by the overlay
+              args: ["python", "-m", "app.cli", "current"]
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: formula-insights-database
+                      key: DATABASE_URL
+                - name: PYTHONDONTWRITEBYTECODE
+                  value: "1"
+              envFrom:
+                - configMapRef:
+                    name: formula-insights
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

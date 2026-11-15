@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: formula-insights
+data:
+  JOLPICA_BASE_URL: https://api.jolpi.ca/ergast/f1
