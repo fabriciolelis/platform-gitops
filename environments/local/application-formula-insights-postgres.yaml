@@ -1,0 +1,33 @@
+# The database, in sync wave 0: healthy before the application's migration hook
+# runs, also on a cold bootstrap (SPEC.md).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: formula-insights-postgres
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    app.kubernetes.io/name: formula-insights
+    app.kubernetes.io/component: database
+spec:
+  project: formula-insights
+  source:
+    repoURL: https://github.com/fabriciolelis/platform-gitops.git
+    targetRevision: main
+    path: applications/postgres/overlays/local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: formula-insights
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m

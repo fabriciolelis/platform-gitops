@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: formula-insights
+resources:
+  - ../../base
+images:
+  # postgres:16-alpine, matching formula-insights-api's compose.yaml.
+  - name: postgres
+    newTag: 16-alpine@sha256:81e77a4833487b8132fe4b00bedd39dc3f74b8641e387f19312a48f7de218c2e
+generators:
+  - secret-generator.yaml

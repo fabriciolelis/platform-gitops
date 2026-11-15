@@ -1,0 +1,75 @@
+# The environment's database. Its data is disposable: there is no backup, and a
+# rebuilt cluster is refilled by the importer (SPEC.md, Assumption 3).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: formula-insights-postgres
+spec:
+  serviceName: formula-insights-postgres
+  replicas: 1
+  template:
+    spec:
+      securityContext:
+        # The postgres user of the Alpine image.
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres  # tag and digest set by the overlay
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: formula_insights
+            - name: POSTGRES_USER
+              value: formula_insights
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: formula-insights-database
+                  key: POSTGRES_PASSWORD
+            # A subdirectory, so the volume root never has to be empty for initdb.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "formula_insights", "-d", "formula_insights"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
