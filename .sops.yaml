@@ -1,0 +1,6 @@
+# Secrets are encrypted to the maintainer's age key (ADR-008). Only the values
+# under data and stringData are encrypted, so reviews still show which keys exist.
+creation_rules:
+  - path_regex: .*\.enc\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age154fnfj35l8alja5s6dfzf65fdr2jwlcln9uw4s94y2kkm94x8unqy9qfnh

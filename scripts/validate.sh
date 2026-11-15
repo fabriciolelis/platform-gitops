@@ -48,7 +48,10 @@ for dir in "${entry_points[@]}"; do
     fail "$name does not render"
     continue
   fi
+  # The Kubernetes schema catalog has no schema for CustomResourceDefinition
+  # itself (it is recursive); the only CRDs here come with the upstream Argo CD.
   kubeconform -strict -summary -kubernetes-version "$kubernetes_version" \
+    -skip CustomResourceDefinition \
     -schema-location default -schema-location "$crd_schemas" "$rendered" \
     || fail "$name has resources that do not match their schema"
 
@@ -62,6 +65,8 @@ for dir in "${entry_points[@]}"; do
   done < <(yq 'select(.kind == "Secret") | .metadata.name' "$rendered")
 
   while IFS='|' read -r container image req_cpu req_mem lim_cpu lim_mem; do
+    # yq prints an empty line for each document without containers.
+    [ -z "$container$image" ] && continue
     tag="${image##*/}"
     if [[ "$tag" != *@sha256:* && ( "$tag" != *:* || "$tag" == *:latest ) ]]; then
       fail "$name: container $container uses $image, which is not pinned to a tag or digest"
