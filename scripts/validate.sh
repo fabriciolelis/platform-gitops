@@ -62,7 +62,7 @@ for dir in "${entry_points[@]}"; do
   # in the output was committed unencrypted.
   while IFS= read -r secret; do
     fail "$name: Secret $secret is committed unencrypted"
-  done < <(yq 'select(.kind == "Secret") | .metadata.name' "$rendered")
+  done < <(yq -N 'select(.kind == "Secret") | .metadata.name' "$rendered")
 
   while IFS='|' read -r container image req_cpu req_mem lim_cpu lim_mem; do
     # yq prints an empty line for each document without containers.
@@ -74,7 +74,7 @@ for dir in "${entry_points[@]}"; do
     if [[ -z "$req_cpu" || -z "$req_mem" || -z "$lim_cpu" || -z "$lim_mem" ]]; then
       fail "$name: container $container needs CPU and memory requests and limits"
     fi
-  done < <(yq '.. | select(tag == "!!map" and has("containers"))
+  done < <(yq -N '.. | select(tag == "!!map" and has("containers"))
     | (.containers + (.initContainers // []))[]
     | [.name, .image,
        .resources.requests.cpu // "", .resources.requests.memory // "",
