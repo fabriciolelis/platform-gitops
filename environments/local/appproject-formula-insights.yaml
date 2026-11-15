@@ -1,0 +1,20 @@
+# Limits Formula Insights to this repository and its own namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: formula-insights
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: formula-insights
+    app.kubernetes.io/part-of: formula-insights
+spec:
+  description: Formula Insights API, database, migrations, and daily import
+  sourceRepos:
+    - https://github.com/fabriciolelis/platform-gitops.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: formula-insights
+  # Allows Argo CD to create the formula-insights namespace.
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace

@@ -1,0 +1,16 @@
+# Local cluster for the `local` environment (SPEC.md, ADR-008).
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: formula-insights-local
+servers: 1
+agents: 0
+# K3s v1.35.9: inside the Kubernetes versions Argo CD 3.5 is tested on.
+image: rancher/k3s:v1.35.9-k3s1@sha256:ec9868c6a38d4e8c1869832fb5fd1eb8473c39794a0b44d2b952e7ba911951bc
+options:
+  k3s:
+    extraArgs:
+      # No Ingress: the API is reached through kubectl port-forward (SPEC.md).
+      - arg: --disable=traefik
+        nodeFilters:
+          - server:*

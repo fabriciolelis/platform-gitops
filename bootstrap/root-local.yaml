@@ -1,0 +1,27 @@
+# Root Application for the `local` environment (app of apps, ADR-008): applied
+# once at bootstrap, then everything in environments/local comes from Git.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-local
+  namespace: argocd
+spec:
+  # The default project is only used here; workloads use the formula-insights project.
+  project: default
+  source:
+    repoURL: https://github.com/fabriciolelis/platform-gitops.git
+    targetRevision: main
+    path: environments/local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m

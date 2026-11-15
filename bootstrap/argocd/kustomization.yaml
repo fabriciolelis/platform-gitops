@@ -1,0 +1,11 @@
+# Argo CD for every environment, applied once per cluster at bootstrap (ADR-008):
+#   kubectl apply --server-side -k bootstrap/argocd
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argocd
+resources:
+  # Argo CD v3.5.6, pinned to its release commit.
+  - https://raw.githubusercontent.com/argoproj/argo-cd/c2b1e3017e2cec86b122172e861dcd026453ae44/manifests/install.yaml
+patches:
+  - path: repo-server-ksops.yaml
+  - path: argocd-cm.yaml

@@ -22,6 +22,7 @@ expect() {
 }
 
 expect valid valid
+expect no-containers valid
 expect unencrypted-secret "Secret demo is committed unencrypted"
 expect plaintext-enc-file "secret.enc.yaml is not encrypted with SOPS"
 expect untagged-image "not pinned to a tag or digest"

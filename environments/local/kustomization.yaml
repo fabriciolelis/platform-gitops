@@ -1,0 +1,5 @@
+# Argo CD objects for the `local` environment, deployed by root-local.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - appproject-formula-insights.yaml
