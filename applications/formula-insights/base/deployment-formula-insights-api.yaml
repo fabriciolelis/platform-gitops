@@ -12,9 +12,6 @@ spec:
       app.kubernetes.io/component: api
   template:
     metadata:
-      annotations:
-        # ROLLBACK DRILL: would roll the API pods if the sync got past the migration.
-        formula-insights/rollback-drill: "2026-11-16"
       labels:
         app.kubernetes.io/name: formula-insights
         app.kubernetes.io/component: api

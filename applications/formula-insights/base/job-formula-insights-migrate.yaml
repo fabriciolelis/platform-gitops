@@ -28,7 +28,7 @@ spec:
       containers:
         - name: migrate
           image: ghcr.io/fabriciolelis/formula-insights-api  # tag set by the overlay
-          command: ["alembic", "upgrade", "does-not-exist"]  # ROLLBACK DRILL: fails on purpose
+          command: ["alembic", "upgrade", "head"]
           env:
             - name: DATABASE_URL
               valueFrom:
