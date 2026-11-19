@@ -1,3 +1,7 @@
+## Validating changes
+
+Before committing manifest or script changes, run `scripts/test-validate.sh` and `scripts/validate.sh` in Bash. If kustomize, kubeconform, yq, or promtool is missing, install the pinned versions with `scripts/install-tools.sh ~/.local/bin`.
+
 ## Agent skills
 
 ### Issue tracker

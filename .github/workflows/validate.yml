@@ -19,26 +19,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # Pinned versions (SPEC.md, Implementation decisions); kustomize matches
-      # the version built into the pinned Argo CD. Checksums are the upstream ones.
+      # Pinned versions and checksums live in the script, shared with local runs.
       - name: Install pinned tools
         run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/bin"
-          cd "$RUNNER_TEMP"
-          curl -fsSLo kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.8.1/kustomize_v5.8.1_linux_amd64.tar.gz
-          echo "029a7f0f4e1932c52a0476cf02a0fd855c0bb85694b82c338fc648dcb53a819d  kustomize.tar.gz" | sha256sum -c -
-          tar -xzf kustomize.tar.gz -C bin kustomize
-          curl -fsSLo kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
-          echo "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883  kubeconform.tar.gz" | sha256sum -c -
-          tar -xzf kubeconform.tar.gz -C bin kubeconform
-          curl -fsSLo bin/yq https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_linux_amd64
-          echo "8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f  bin/yq" | sha256sum -c -
-          chmod +x bin/yq
-          # promtool from the Prometheus release that runs in the cluster (ADR-009).
-          curl -fsSLo prometheus.tar.gz https://github.com/prometheus/prometheus/releases/download/v3.15.1/prometheus-3.15.1.linux-amd64.tar.gz
-          echo "6a726885328ad9efebbf36e876ce2fb6225468a71fd1e7ce3ba666d5f4d97a84  prometheus.tar.gz" | sha256sum -c -
-          tar -xzf prometheus.tar.gz -C bin --strip-components=1 prometheus-3.15.1.linux-amd64/promtool
+          scripts/install-tools.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Test the validation rules
