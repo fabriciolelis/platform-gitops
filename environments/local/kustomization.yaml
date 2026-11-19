@@ -5,3 +5,5 @@ resources:
   - appproject-formula-insights.yaml
   - application-formula-insights-postgres.yaml
   - application-formula-insights.yaml
+  - appproject-monitoring.yaml
+  - application-monitoring.yaml
