@@ -1,0 +1,77 @@
+# Blackbox exporter: runs the synthetic probes Prometheus asks for, such as the
+# probe on the API's /ready (platform-gitops#17).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blackbox-exporter
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: blackbox-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: blackbox-exporter
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        # The nobody user of the upstream image.
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: blackbox-exporter
+          image: quay.io/prometheus/blackbox-exporter  # tag and digest set by the overlay
+          args:
+            - --config.file=/etc/blackbox-exporter/blackbox.yml
+          ports:
+            - name: http
+              containerPort: 9115
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/blackbox-exporter
+      volumes:
+        - name: config
+          configMap:
+            name: blackbox-exporter
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackbox-exporter
+  labels:
+    app.kubernetes.io/name: blackbox-exporter
+spec:
+  selector:
+    app.kubernetes.io/name: blackbox-exporter
+  ports:
+    - name: http
+      port: 9115
+      targetPort: http

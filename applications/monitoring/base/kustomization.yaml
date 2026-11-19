@@ -1,0 +1,20 @@
+# The monitoring stack (ADR-009): Prometheus, kube-state-metrics, and the
+# blackbox exporter, from upstream images; the overlay pins each version.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: monitoring
+resources:
+  - prometheus.yaml
+  - kube-state-metrics.yaml
+  - blackbox-exporter.yaml
+# A new configuration gets a new name, so Prometheus restarts with it.
+configMapGenerator:
+  - name: prometheus
+    files:
+      - prometheus.yml
+  - name: blackbox-exporter
+    files:
+      - blackbox.yml

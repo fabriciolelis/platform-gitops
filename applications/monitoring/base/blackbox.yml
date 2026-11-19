@@ -1,0 +1,7 @@
+# Blackbox exporter modules; the probe on /ready is configured in Prometheus.
+modules:
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      preferred_ip_protocol: ip4

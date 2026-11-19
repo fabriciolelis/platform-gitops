@@ -1,0 +1,5 @@
+groups:
+  - name: slo
+    rules:
+      - record: slo:broken
+        expr: sum(rate(http_requests_total[5m])

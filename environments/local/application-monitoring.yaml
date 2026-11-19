@@ -1,0 +1,32 @@
+# The monitoring stack, in sync wave 2: after the application, so a failure in
+# monitoring never keeps the API from being deployed.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    app.kubernetes.io/name: monitoring
+spec:
+  project: monitoring
+  source:
+    repoURL: https://github.com/fabriciolelis/platform-gitops.git
+    targetRevision: main
+    path: applications/monitoring/overlays/local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 3m

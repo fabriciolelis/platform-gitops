@@ -4,7 +4,8 @@
 # and enforces what may be committed (SPEC.md, Testing strategy).
 #
 # Usage: scripts/validate.sh [repository root]
-# Needs kustomize, kubeconform, and yq on PATH (pinned versions in validate.yml).
+# Needs kustomize, kubeconform, yq, and promtool on PATH (pinned versions in
+# validate.yml).
 set -euo pipefail
 
 root="$(cd "${1:-.}" && pwd)"
@@ -80,6 +81,22 @@ for dir in "${entry_points[@]}"; do
        .resources.requests.cpu // "", .resources.requests.memory // "",
        .resources.limits.cpu // "", .resources.limits.memory // ""]
     | join("|")' "$rendered")
+
+  # Prometheus configuration and the rule files next to it are checked by
+  # promtool, as Prometheus would load them from the mounted ConfigMap.
+  while IFS= read -r configmap; do
+    [ -z "$configmap" ] && continue
+    config_dir="$work/.prometheus/$configmap"
+    mkdir -p "$config_dir"
+    while IFS= read -r key; do
+      yq -N "select(.kind == \"ConfigMap\" and .metadata.name == \"$configmap\") | .data[\"$key\"]" \
+        "$rendered" > "$config_dir/$key"
+    done < <(yq -N "select(.kind == \"ConfigMap\" and .metadata.name == \"$configmap\") | .data | keys | .[]" "$rendered")
+    if ! output="$(promtool check config "$config_dir/prometheus.yml" 2>&1)"; then
+      echo "$output" >&2
+      fail "$name: ConfigMap $configmap has an invalid Prometheus configuration"
+    fi
+  done < <(yq -N 'select(.kind == "ConfigMap" and .data["prometheus.yml"] != null) | .metadata.name' "$rendered")
 done
 
 if [ "$failures" -gt 0 ]; then

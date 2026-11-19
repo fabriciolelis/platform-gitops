@@ -35,6 +35,7 @@ environments/
 applications/
   postgres/                     # database: base and overlays/<environment>
   formula-insights/             # migration hook, API, daily importer
+  monitoring/                   # Prometheus, kube-state-metrics, blackbox exporter
 scripts/
   validate.sh                   # what CI runs, without a cluster or the age key
   test-validate.sh              # proves each validation rule
@@ -92,7 +93,15 @@ kubectl -n formula-insights create job backfill --from=cronjob/formula-insights-
 
 **Edit a secret.** `sops applications/postgres/overlays/local/secret.enc.yaml` opens it decrypted in `$EDITOR` and re-encrypts it on save. Never commit a decrypted file.
 
-**Validate before pushing.** With kustomize, kubeconform, and yq installed (versions in `.github/workflows/validate.yml`), run `scripts/test-validate.sh` and `scripts/validate.sh`.
+**Open the monitoring UI.** Prometheus is reachable only through a port forward; its data is disposable and starts empty after a restart (ADR-009):
+
+```bash
+kubectl -n monitoring port-forward svc/prometheus 9090:9090
+```
+
+Then open `http://localhost:9090`. For example, `kube_job_status_succeeded{namespace="formula-insights"}` shows the outcome of each import Job.
+
+**Validate before pushing.** With kustomize, kubeconform, yq, and promtool installed (versions in `.github/workflows/validate.yml`), run `scripts/test-validate.sh` and `scripts/validate.sh`.
 
 ## Change rules
 
@@ -108,4 +117,4 @@ After a merge, verify that Argo CD reports every Application as `Synced` and `He
 
 ## Related documents
 
-ADR-003 (GitOps delivery), ADR-007 (migrations), and ADR-008 (bootstrap, secrets, environments) in the `platform-docs` repository, which also holds the rollback runbook.
+ADR-003 (GitOps delivery), ADR-007 (migrations), ADR-008 (bootstrap, secrets, environments), and ADR-009 (observability) in the `platform-docs` repository, which also holds the rollback runbook.

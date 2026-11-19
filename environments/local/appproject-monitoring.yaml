@@ -1,0 +1,25 @@
+# Limits the monitoring stack to this repository and its own namespace. The
+# cluster-wide read access of kube-state-metrics is the only reason it may create
+# cluster-scoped RBAC; the formula-insights project stays without it.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: monitoring
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/part-of: monitoring
+spec:
+  description: Monitoring stack for the SLOs (ADR-009)
+  sourceRepos:
+    - https://github.com/fabriciolelis/platform-gitops.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
