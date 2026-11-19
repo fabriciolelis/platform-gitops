@@ -101,7 +101,13 @@ kubectl -n monitoring port-forward svc/prometheus 9090:9090
 
 Then open `http://localhost:9090`. For example, `kube_job_status_succeeded{namespace="formula-insights"}` shows the outcome of each import Job.
 
-**Validate before pushing.** With kustomize, kubeconform, yq, and promtool installed (versions in `.github/workflows/validate.yml`), run `scripts/test-validate.sh` and `scripts/validate.sh`.
+**Validate before pushing.** Install the pinned tools once (Linux or Git Bash on Windows) into a directory on your `PATH`, then run the same checks as CI:
+
+```bash
+scripts/install-tools.sh ~/.local/bin
+scripts/test-validate.sh
+scripts/validate.sh
+```
 
 ## Change rules
 
