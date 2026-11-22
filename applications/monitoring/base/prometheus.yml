@@ -21,3 +21,21 @@ scrape_configs:
   - job_name: blackbox-exporter
     static_configs:
       - targets: ["blackbox-exporter:9115"]
+
+  # Synthetic probe for the availability SLO: every 30 seconds the blackbox
+  # exporter calls the API's /ready (which checks the database) through its
+  # Service, as a client would.
+  - job_name: api-ready-probe
+    scrape_interval: 30s
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ["http://formula-insights-api.formula-insights.svc/ready"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

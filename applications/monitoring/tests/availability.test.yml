@@ -1,0 +1,21 @@
+# Unit tests for the availability SLO rule (`promtool test rules`, run by
+# scripts/validate.sh).
+rule_files:
+  - ../base/availability.rules.yml
+
+evaluation_interval: 30s
+
+tests:
+  # 100 probes, 30 seconds apart: 95 succeed and 5 fail, then nothing for a
+  # while (the cluster is off), then 100 more that all succeed. Only probes
+  # that ran count: 195 of 200.
+  - interval: 30s
+    input_series:
+      - series: 'probe_success{job="api-ready-probe", instance="http://formula-insights-api.formula-insights.svc/ready"}'
+        values: '1x94 0x4 _x200 1x99'
+    promql_expr_test:
+      - expr: slo:api_availability:ratio_30d
+        eval_time: 200m
+        exp_samples:
+          - labels: 'slo:api_availability:ratio_30d{job="api-ready-probe", instance="http://formula-insights-api.formula-insights.svc/ready"}'
+            value: 0.975

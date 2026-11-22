@@ -1,0 +1,10 @@
+# Availability SLO (README, "SLOs for Release 1"): successful probes over all
+# probes of the API's /ready in 30 days. Only probes that ran count: while the
+# whole cluster or Prometheus is down there are no probes, so a full outage is
+# not visible here (ADR-009 runs the probe inside the cluster).
+# Tested by applications/monitoring/tests/availability.test.yml.
+groups:
+  - name: availability-slo
+    rules:
+      - record: slo:api_availability:ratio_30d
+        expr: avg_over_time(probe_success{job="api-ready-probe"}[30d])
