@@ -1,0 +1,122 @@
+# Unit tests for the ingestion SLO rules (`promtool test rules`, run by
+# scripts/validate.sh). Time starts at 0 (1970-01-01 00:00 UTC), so the daily
+# import is due at hour 6 of each day: 6, 30, 54, 78, 102, ...
+rule_files:
+  - ../base/ingestion.rules.yml
+
+evaluation_interval: 1h
+
+tests:
+  # Five days after the CronJob was created, five imports were due: day 0
+  # succeeded, day 1 failed, day 2 had no daily import (only a manual one),
+  # day 3 and day 4 succeeded. The manual import does not count: 3 of 5.
+  - interval: 1h
+    input_series:
+      - series: 'kube_cronjob_created{namespace="formula-insights", cronjob="formula-insights-importer"}'
+        values: '0x103'
+      # Day 0, hour 6: succeeded.
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-d0", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x6 1x97'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-d0", condition="true"}'
+        values: '_x6 0 1x96'
+      # Day 1, hour 30: failed after its retries.
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-d1", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x30 1x73'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-d1", condition="true"}'
+        values: '_x30 0x73'
+      # Day 2, hour 54: no daily import; a manual import succeeded instead.
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="import-now", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x54 1x49'
+      - series: 'kube_job_annotations{namespace="formula-insights", job_name="import-now", annotation_cronjob_kubernetes_io_instantiate="manual"}'
+        values: '_x54 1x49'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="import-now", condition="true"}'
+        values: '_x54 1x49'
+      # Day 3, hour 78: succeeded.
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-d3", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x78 1x25'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-d3", condition="true"}'
+        values: '_x78 1x25'
+      # Day 4, hour 102: succeeded in 18 seconds.
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-d4", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x102 1x1'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-d4", condition="true"}'
+        values: '_x102 1x1'
+      - series: 'kube_job_status_start_time{namespace="formula-insights", job_name="importer-d4"}'
+        values: '_x102 367200x1'
+      - series: 'kube_job_status_completion_time{namespace="formula-insights", job_name="importer-d4"}'
+        values: '_x102 367218x1'
+    promql_expr_test:
+      - expr: ingestion:expected_runs:30d
+        eval_time: 103h
+        exp_samples:
+          - labels: 'ingestion:expected_runs:30d'
+            value: 5
+      - expr: slo:ingestion_success_rate:ratio_30d
+        eval_time: 103h
+        exp_samples:
+          - labels: 'slo:ingestion_success_rate:ratio_30d'
+            value: 0.6
+      - expr: slo:daily_import_within_30m:bool
+        eval_time: 103h
+        exp_samples:
+          - labels: 'slo:daily_import_within_30m:bool{namespace="formula-insights", job_name="importer-d4"}'
+            value: 1
+      - expr: ingestion:daily_import_duration:seconds
+        eval_time: 103h
+        exp_samples:
+          - labels: 'ingestion:daily_import_duration:seconds{namespace="formula-insights", job_name="importer-d4"}'
+            value: 18
+
+  # After 35 days the window holds 30 due imports, so the rate never divides
+  # by more than 30; the day-1 success has left the window. 3 of 30.
+  - interval: 1h
+    input_series:
+      - series: 'kube_cronjob_created{namespace="formula-insights", cronjob="formula-insights-importer"}'
+        values: '0x847'
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-d1", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x30 1x72'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-d1", condition="true"}'
+        values: '_x30 1x72'
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-d33", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x798 1x49'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-d33", condition="true"}'
+        values: '_x798 1x49'
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-d34", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x822 1x25'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-d34", condition="true"}'
+        values: '_x822 1x25'
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-d35", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x846 1x1'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-d35", condition="true"}'
+        values: '_x846 1x1'
+    promql_expr_test:
+      - expr: ingestion:expected_runs:30d
+        eval_time: 847h
+        exp_samples:
+          - labels: 'ingestion:expected_runs:30d'
+            value: 30
+      - expr: slo:ingestion_success_rate:ratio_30d
+        eval_time: 847h
+        exp_samples:
+          - labels: 'slo:ingestion_success_rate:ratio_30d'
+            value: 0.1
+
+  # A new cluster before its first 06:00: nothing is due, so there is no value;
+  # a scheduled Job created then (a test run) counts as 1 of 1.
+  - interval: 1h
+    input_series:
+      - series: 'kube_cronjob_created{namespace="formula-insights", cronjob="formula-insights-importer"}'
+        values: '0x4'
+      - series: 'kube_job_owner{namespace="formula-insights", job_name="importer-test", owner_kind="CronJob", owner_name="formula-insights-importer"}'
+        values: '_x3 1x1'
+      - series: 'kube_job_complete{namespace="formula-insights", job_name="importer-test", condition="true"}'
+        values: '_x3 1x1'
+    promql_expr_test:
+      - expr: slo:ingestion_success_rate:ratio_30d
+        eval_time: 2h
+        exp_samples: []
+      - expr: slo:ingestion_success_rate:ratio_30d
+        eval_time: 4h
+        exp_samples:
+          - labels: 'slo:ingestion_success_rate:ratio_30d'
+            value: 1

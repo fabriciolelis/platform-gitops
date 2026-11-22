@@ -1,0 +1,5 @@
+groups:
+  - name: demo
+    rules:
+      - record: demo:up:sum
+        expr: sum(up)
