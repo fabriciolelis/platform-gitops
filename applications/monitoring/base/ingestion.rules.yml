@@ -1,0 +1,75 @@
+# Ingestion SLOs, computed from the ingestion signal exactly as
+# platform-docs runbooks/daily-import.md defines it:
+# - one daily import is one Job of the formula-insights-importer CronJob,
+#   retries included (they are pods of the same Job);
+# - success is the Job ending Complete;
+# - manual Jobs (annotation cronjob.kubernetes.io/instantiate: manual) are
+#   excluded, although they have the CronJob as owner too;
+# - a day without a daily import counts as failed.
+# Tested by applications/monitoring/tests/ingestion.test.yml.
+groups:
+  - name: ingestion-slo
+    rules:
+      # One series per scheduled daily import seen in the last 30 days. Job
+      # series outlive the Job objects (the CronJob keeps only the last 3).
+      - record: ingestion:scheduled_job:30d
+        expr: |
+          max by (namespace, job_name) (
+            max_over_time(kube_job_owner{namespace="formula-insights", owner_kind="CronJob", owner_name="formula-insights-importer"}[30d])
+          )
+          unless on (namespace, job_name)
+          max_over_time(kube_job_annotations{namespace="formula-insights", annotation_cronjob_kubernetes_io_instantiate="manual"}[30d])
+
+      - record: ingestion:scheduled_job_succeeded:30d
+        expr: |
+          (
+            max by (namespace, job_name) (
+              max_over_time(kube_job_complete{namespace="formula-insights", condition="true"}[30d])
+            ) == 1
+          )
+          and on (namespace, job_name)
+          ingestion:scheduled_job:30d
+
+      # Daily imports expected in the last 30 days: the 06:00 UTC schedule
+      # times since the CronJob was created, so at most 30. Keep the 21600
+      # (06:00) in step with the CronJob's schedule.
+      - record: ingestion:expected_runs:30d
+        expr: |
+          floor((vector(time()) - 21600) / 86400)
+          - floor(
+              (clamp_min(max(kube_cronjob_created{namespace="formula-insights", cronjob="formula-insights-importer"}), time() - 30 * 86400) - 21600)
+              / 86400
+            )
+
+      # SLO: successful daily imports over expected ones, in 30 days. A day
+      # without a daily import adds to the expected runs but not to the
+      # successes. A scheduled Job before the first expected run (a test, or a
+      # Job the CronJob catches up) is never counted as more than 100%. No value
+      # before the first daily import is due.
+      - record: slo:ingestion_success_rate:ratio_30d
+        expr: |
+          (count(ingestion:scheduled_job_succeeded:30d) or vector(0))
+          /
+          (
+            max(
+              label_replace(ingestion:expected_runs:30d, "from", "schedule", "", "")
+              or
+              label_replace(count(ingestion:scheduled_job:30d), "from", "jobs", "", "")
+            ) > 0
+          )
+
+      # Duration of each scheduled daily import that completed, while its Job
+      # exists. A run past 30 minutes never completes: the Job's
+      # activeDeadlineSeconds stops it and it counts as failed above.
+      - record: ingestion:daily_import_duration:seconds
+        expr: |
+          (
+            max by (namespace, job_name) (kube_job_status_completion_time{namespace="formula-insights"})
+            - max by (namespace, job_name) (kube_job_status_start_time{namespace="formula-insights"})
+          )
+          and on (namespace, job_name)
+          ingestion:scheduled_job:30d
+
+      # SLO: 1 when a scheduled daily import completed within 30 minutes.
+      - record: slo:daily_import_within_30m:bool
+        expr: ingestion:daily_import_duration:seconds <= bool 1800

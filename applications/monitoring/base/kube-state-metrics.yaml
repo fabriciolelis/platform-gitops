@@ -69,6 +69,8 @@ spec:
           image: registry.k8s.io/kube-state-metrics/kube-state-metrics  # tag and digest set by the overlay
           args:
             - --resources=cronjobs,deployments,jobs,pods,statefulsets
+            # Tells manual imports from daily ones (ingestion.rules.yml).
+            - --metric-annotations-allowlist=jobs=[cronjob.kubernetes.io/instantiate]
             - --port=8080
             - --telemetry-port=8081
           ports:

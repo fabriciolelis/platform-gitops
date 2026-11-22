@@ -30,5 +30,6 @@ expect latest-image "not pinned to a tag or digest"
 expect missing-limits "needs CPU and memory requests and limits"
 expect invalid-prometheus-config "has an invalid Prometheus configuration"
 expect invalid-prometheus-rule "has an invalid Prometheus configuration"
+expect failing-rule-test "has failing Prometheus rule tests"
 
 exit "$status"

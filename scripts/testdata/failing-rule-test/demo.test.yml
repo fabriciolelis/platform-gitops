@@ -1,0 +1,16 @@
+# The rule sums two targets to 2; the test expects 3, so it must fail.
+rule_files:
+  - demo.rules.yml
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'up{job="a"}'
+        values: '1x2'
+      - series: 'up{job="b"}'
+        values: '1x2'
+    promql_expr_test:
+      - expr: demo:up:sum
+        eval_time: 1m
+        exp_samples:
+          - labels: 'demo:up:sum'
+            value: 3

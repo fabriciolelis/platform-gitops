@@ -99,6 +99,14 @@ for dir in "${entry_points[@]}"; do
   done < <(yq -N 'select(.kind == "ConfigMap" and .data["prometheus.yml"] != null) | .metadata.name' "$rendered")
 done
 
+# Unit tests for Prometheus rules, on synthetic series.
+while IFS= read -r file; do
+  if ! output="$(cd "$(dirname "$file")" && promtool test rules "$(basename "$file")" 2>&1)"; then
+    echo "$output" >&2
+    fail "${file#"$work"/} has failing Prometheus rule tests"
+  fi
+done < <(find "$work" -name '*.test.yml' | sort)
+
 if [ "$failures" -gt 0 ]; then
   echo "$failures problem(s) found" >&2
   exit 1

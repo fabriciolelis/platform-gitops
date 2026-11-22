@@ -15,6 +15,7 @@ configMapGenerator:
   - name: prometheus
     files:
       - prometheus.yml
+      - ingestion.rules.yml
   - name: blackbox-exporter
     files:
       - blackbox.yml
