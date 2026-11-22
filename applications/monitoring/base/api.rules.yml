@@ -1,0 +1,23 @@
+# API latency SLO and the secondary availability signal (README, "SLOs for
+# Release 1"), from the API's request-duration histogram (OpenTelemetry HTTP
+# semantic conventions). /health, /ready, and /metrics are never measured.
+# Tested by applications/monitoring/tests/api.test.yml.
+groups:
+  - name: api-slo
+    rules:
+      # SLO: share of read requests (the /seasons/... routes) completed below
+      # 500 ms in 30 days. 5xx responses are left out: a fast error must not
+      # improve latency; errors count against availability instead. No value
+      # without read requests.
+      - record: slo:api_latency:ratio_30d
+        expr: |
+          sum(increase(http_server_request_duration_seconds_bucket{job="formula-insights-api", http_route=~"/seasons/.*", http_response_status_code!~"5..", le="0.5"}[30d]))
+          /
+          (sum(increase(http_server_request_duration_seconds_count{job="formula-insights-api", http_route=~"/seasons/.*", http_response_status_code!~"5.."}[30d])) > 0)
+
+      # Secondary availability signal: share of non-5xx responses in 30 days.
+      - record: slo:api_non_5xx:ratio_30d
+        expr: |
+          sum(increase(http_server_request_duration_seconds_count{job="formula-insights-api", http_response_status_code!~"5.."}[30d]))
+          /
+          (sum(increase(http_server_request_duration_seconds_count{job="formula-insights-api"}[30d])) > 0)

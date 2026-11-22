@@ -17,6 +17,7 @@ configMapGenerator:
       - prometheus.yml
       - ingestion.rules.yml
       - availability.rules.yml
+      - api.rules.yml
   - name: blackbox-exporter
     files:
       - blackbox.yml

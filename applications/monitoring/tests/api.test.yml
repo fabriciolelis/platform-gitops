@@ -1,0 +1,50 @@
+# Unit tests for the API SLO rules (`promtool test rules`, run by
+# scripts/validate.sh). Counters grow once per minute for 10 minutes.
+rule_files:
+  - ../base/api.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Two API pods. Reads: 100 requests, 96 below 0.5 s; 5 fast 500 errors on a
+  # read route; 20 requests on a non-read route (all below 0.5 s, all 200).
+  # Latency counts reads without 5xx: 96 of 100. Non-5xx: 120 of 125.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_bucket{job="formula-insights-api", pod="api-a", http_route="/seasons/{year}/races", http_response_status_code="200", le="0.5"}'
+        values: '0+5x10'
+      - series: 'http_server_request_duration_seconds_count{job="formula-insights-api", pod="api-a", http_route="/seasons/{year}/races", http_response_status_code="200"}'
+        values: '0+5x10'
+      - series: 'http_server_request_duration_seconds_bucket{job="formula-insights-api", pod="api-b", http_route="/seasons/{year}/standings/drivers", http_response_status_code="200", le="0.5"}'
+        values: '0+4.6x10'
+      - series: 'http_server_request_duration_seconds_count{job="formula-insights-api", pod="api-b", http_route="/seasons/{year}/standings/drivers", http_response_status_code="200"}'
+        values: '0+5x10'
+      - series: 'http_server_request_duration_seconds_bucket{job="formula-insights-api", pod="api-b", http_route="/seasons/{year}/races", http_response_status_code="500", le="0.5"}'
+        values: '0+0.5x10'
+      - series: 'http_server_request_duration_seconds_count{job="formula-insights-api", pod="api-b", http_route="/seasons/{year}/races", http_response_status_code="500"}'
+        values: '0+0.5x10'
+      - series: 'http_server_request_duration_seconds_bucket{job="formula-insights-api", pod="api-a", http_route="/other", http_response_status_code="200", le="0.5"}'
+        values: '0+2x10'
+      - series: 'http_server_request_duration_seconds_count{job="formula-insights-api", pod="api-a", http_route="/other", http_response_status_code="200"}'
+        values: '0+2x10'
+    promql_expr_test:
+      - expr: slo:api_latency:ratio_30d
+        eval_time: 10m
+        exp_samples:
+          - labels: 'slo:api_latency:ratio_30d'
+            value: 0.96
+      - expr: slo:api_non_5xx:ratio_30d
+        eval_time: 10m
+        exp_samples:
+          - labels: 'slo:api_non_5xx:ratio_30d'
+            value: 0.96
+
+  # No traffic yet: no value rather than a division by zero.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="formula-insights-api", pod="api-a", http_route="/seasons/{year}/races", http_response_status_code="200"}'
+        values: '0x10'
+    promql_expr_test:
+      - expr: slo:api_latency:ratio_30d
+        eval_time: 10m
+        exp_samples: []

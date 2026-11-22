@@ -8,4 +8,4 @@ resources:
 # and the importer always run the same version.
 images:
   - name: ghcr.io/fabriciolelis/formula-insights-api
-    newTag: ddf140ab45b65a58b1297cf83f771d759ae7b7a0
+    newTag: 4f81d55b0c57516412d01cfc4067af26ff581e7b
