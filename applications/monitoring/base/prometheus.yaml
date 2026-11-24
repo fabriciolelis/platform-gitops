@@ -19,8 +19,8 @@ spec:
       labels:
         app.kubernetes.io/name: prometheus
     spec:
-      # Targets are fixed addresses, so Prometheus never calls the Kubernetes API.
-      automountServiceAccountToken: false
+      # Finds the API pods through the Kubernetes API (read-only, see below).
+      serviceAccountName: prometheus
       securityContext:
         # The nobody user of the upstream image.
         runAsNonRoot: true
@@ -87,3 +87,39 @@ spec:
     - name: http
       port: 9090
       targetPort: http
+---
+# Prometheus discovers the API pods, so every replica is scraped on its own
+# (scraping through the Service would mix the counters of different pods).
+# It only lists and watches pods.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: monitoring
